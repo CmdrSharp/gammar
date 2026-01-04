@@ -7,6 +7,8 @@ This application allows you to control display settings on Windows using keybind
 
 The application requires no installation; just download the executable and run it.
 
+![Screenshot](screenshot.png)
+
 ## Development
 
 This application contains `unsafe` code blocks that directly interface with the Windows API to control display settings. Specifically:
