@@ -1,0 +1,30 @@
+[application]
+
+[bundle]
+publisher = "CmdrSharp"
+identifier = "com.gammar.app"
+icon = ["assets/icon.png"]
+
+[desktop.app]
+# Window title
+title = "gammar"
+
+[web.app]
+
+# HTML title tag content
+title = "gammar"
+
+# include `assets` in web platform
+[web.resource]
+
+# Additional CSS style files
+style = []
+
+# Additional JavaScript files
+script = []
+
+[web.resource.dev]
+
+# Javascript code file
+# serve: [dev-server] only
+script = []
