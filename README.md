@@ -9,6 +9,10 @@ The application requires no installation; just download the executable and run i
 
 ![Screenshot](screenshot.png)
 
+# Download
+
+See the release assets under [releases](https://github.com/CmdrSharp/gammar/releases/latest).
+
 ## Development
 
 This application contains `unsafe` code blocks that directly interface with the Windows API to control display settings. Specifically:
