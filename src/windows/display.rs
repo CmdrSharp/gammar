@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::error::Error;
-use std::fmt;
+use std::{
+    error::Error,
+    fmt,
+    sync::{Arc, Mutex},
+};
 use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::{GetLastError, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
@@ -33,7 +36,6 @@ impl Default for DisplaySettings {
 }
 
 impl DisplaySettings {
-    #[allow(dead_code)]
     pub fn new(gamma: f32, brightness: f32, contrast: f32) -> Self {
         Self {
             gamma: gamma.clamp(0.1, 3.0),
@@ -55,8 +57,6 @@ impl fmt::Display for GammaError {
 impl Error for GammaError {}
 
 pub fn enumerate_monitors() -> Vec<MonitorInfo> {
-    use std::sync::{Arc, Mutex};
-
     let monitors: Arc<Mutex<Vec<MonitorInfo>>> = Arc::new(Mutex::new(Vec::new()));
     let monitors_clone = monitors.clone();
 
