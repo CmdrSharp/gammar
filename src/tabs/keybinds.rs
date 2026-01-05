@@ -2,7 +2,9 @@ use crate::{
     windows::hotkeys::{HotkeyAction, KeybindConfig},
     AppConfig,
 };
-use dioxus::prelude::*;
+use dioxus::{desktop::window, prelude::*};
+use global_hotkey::hotkey::HotKey;
+use std::str::FromStr;
 
 /// Normalize a single key string to standard representation
 fn normalize_key(key: &str) -> String {
@@ -122,6 +124,7 @@ fn handle_key_capture(
     mut recording_keys: Signal<bool>,
     mut config: Signal<AppConfig>,
     mut keybind_version: Signal<usize>,
+    mut error_msg: Signal<Option<String>>,
 ) {
     // Handle ESC to cancel
     if key == "Escape" {
@@ -129,6 +132,9 @@ fn handle_key_capture(
         recording_keys.set(false);
         captured_modifiers.set(Vec::new());
         captured_key.set(None);
+
+        // Re-register all shortcuts after canceling
+        keybind_version.set(keybind_version() + 1);
         return;
     }
 
@@ -165,17 +171,60 @@ fn handle_key_capture(
                 // Save the keybind
                 if let Some(action) = editing_action() {
                     let new_keybind = KeybindConfig::new(mods.clone(), normalized_key);
-                    config.write().keybinds.insert(action, new_keybind);
-                    let _ = config.read().save();
+                    let shortcut_string = new_keybind.to_shortcut_string();
 
-                    keybind_version.set(keybind_version() + 1);
+                    // Validate the keybind can be parsed
+                    match HotKey::from_str(&shortcut_string) {
+                        Ok(_) => {
+                            let cfg = config.read();
+
+                            // Check for duplicate keybinds
+                            let duplicate =
+                                cfg.keybinds.iter().find(|(other_action, other_keybind)| {
+                                    **other_action != action
+                                        && other_keybind.to_shortcut_string() == shortcut_string
+                                });
+
+                            if let Some((duplicate_action, _)) = duplicate {
+                                let duplicate_name = format_action(*duplicate_action);
+                                drop(cfg);
+
+                                error_msg.set(Some(format!(
+                                    "Keybind '{}' is already used by: {}",
+                                    shortcut_string, duplicate_name
+                                )));
+
+                                captured_modifiers.set(Vec::new());
+                                captured_key.set(None);
+                            } else {
+                                drop(cfg);
+
+                                config.write().keybinds.insert(action, new_keybind);
+                                let _ = config.read().save();
+
+                                error_msg.set(None);
+
+                                // Re-register all shortcuts
+                                keybind_version.set(keybind_version() + 1);
+
+                                // Reset state after successful save
+                                editing_action.set(None);
+                                recording_keys.set(false);
+                                captured_modifiers.set(Vec::new());
+                                captured_key.set(None);
+                            }
+                        }
+                        Err(e) => {
+                            error_msg.set(Some(format!(
+                                "Failed to register keybind '{}': {:?}",
+                                shortcut_string, e
+                            )));
+
+                            captured_modifiers.set(Vec::new());
+                            captured_key.set(None);
+                        }
+                    }
                 }
-
-                // Reset state
-                editing_action.set(None);
-                recording_keys.set(false);
-                captured_modifiers.set(Vec::new());
-                captured_key.set(None);
 
                 return;
             }
@@ -194,6 +243,7 @@ fn KeybindRow(
     mut captured_modifiers: Signal<Vec<String>>,
     mut captured_key: Signal<Option<String>>,
     mut keybind_version: Signal<usize>,
+    error_msg: Signal<Option<String>>,
 ) -> Element {
     let cfg = config.read();
     let keybind = cfg.keybinds.get(&action).cloned();
@@ -226,6 +276,8 @@ fn KeybindRow(
                             recording_keys.set(false);
                             captured_modifiers.set(Vec::new());
                             captured_key.set(None);
+
+                            keybind_version.set(keybind_version() + 1);
                         },
                         "Cancel"
                     }
@@ -233,6 +285,9 @@ fn KeybindRow(
                     button {
                         class: "edit-btn",
                         onclick: move |_| {
+                            window().remove_all_shortcuts();
+                            error_msg.set(None);
+
                             editing_action.set(Some(action));
                             recording_keys.set(true);
                             captured_modifiers.set(Vec::new());
@@ -264,26 +319,13 @@ pub fn KeybindsTab(mut config: Signal<AppConfig>, mut keybind_version: Signal<us
     let recording_keys = use_signal(|| false);
     let captured_modifiers = use_signal(Vec::<String>::new);
     let captured_key = use_signal(|| Option::<String>::None);
-    let mut error_msg = use_signal(|| Option::<String>::None);
+    let error_msg = use_signal(|| Option::<String>::None);
 
     rsx! {
         div {
             class: "keybinds-tab",
             h2 { "Keyboard shortcuts" }
             p { class: "info", "Click 'Edit' to change a keybind." }
-
-            if let Some(err) = error_msg() {
-                div {
-                    class: "error-message",
-                    style: "background: #e74c3c; color: white; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
-                    "Error: {err}"
-                    button {
-                        style: "margin-left: 10px; background: transparent; border: 1px solid white; color: white; padding: 5px 10px; cursor: pointer;",
-                        onclick: move |_| error_msg.set(None),
-                        "✕"
-                    }
-                }
-            }
 
             table {
                 class: "keybinds-table",
@@ -315,6 +357,7 @@ pub fn KeybindsTab(mut config: Signal<AppConfig>, mut keybind_version: Signal<us
                             captured_modifiers,
                             captured_key,
                             keybind_version,
+                            error_msg,
                         }
                     }
                 }
@@ -342,6 +385,7 @@ pub fn KeybindsTab(mut config: Signal<AppConfig>, mut keybind_version: Signal<us
                                 captured_modifiers,
                                 captured_key,
                                 keybind_version,
+                                error_msg,
                             }
                         }
                     }
@@ -376,11 +420,21 @@ pub fn KeybindsTab(mut config: Signal<AppConfig>, mut keybind_version: Signal<us
                             recording_keys,
                             config,
                             keybind_version,
+                            error_msg,
                         );
                     },
 
                     div { class: "key-capture-box",
                         h3 { "Press your key combination" }
+
+                        if let Some(err) = error_msg() {
+                            div {
+                                class: "error-message",
+                                style: "background: #e74c3c; color: white; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
+                                "Error: {err}"
+                            }
+                        }
+
                         p {
                             if !captured_modifiers().is_empty() {
                                 "{captured_modifiers().join(\" + \")} + ..."
